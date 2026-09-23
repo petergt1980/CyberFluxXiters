@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-bg text-white font-sans antialiased;
+    background-image:
+      linear-gradient(rgba(0, 224, 255, 0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 224, 255, 0.02) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-[rgba(15,25,45,0.5)] backdrop-blur-xl border border-[rgba(0,224,255,0.12)];
+  }
+  .glass-hover {
+    @apply transition-all duration-300 hover:border-[rgba(0,224,255,0.35)] hover:shadow-card hover:-translate-y-1.5;
+  }
+  .text-gradient {
+    @apply bg-gradient-to-r from-white to-[#b0e0ff] bg-clip-text text-transparent;
+  }
+}
+
+/* scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 224, 255, 0.25);
+  border-radius: 4px;
+}
+* {
+* { cursor: crosshair; }
+a, button { cursor: pointer; }
+}
