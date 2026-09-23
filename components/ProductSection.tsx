@@ -1,17 +1,38 @@
 "use client";
 
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { ProductCard } from "./ProductCard";
-import { CATEGORIES, products } from "@/lib/data";
+import { CATEGORIES } from "@/lib/data";
 import { Product } from "@/types";
 import { clsx } from "clsx";
+import { Loader2 } from "lucide-react";
 
-export function ProductSection({ onView }: { onView: (p: Product) => void }) {
+export function ProductSection({
+  onView,
+}: {
+  onView: (p: Product) => void;
+}) {
   const [active, setActive] = useState("all");
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/products")
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setProducts(data);
+        }
+      })
+      .catch(() => setProducts([]))
+      .finally(() => setLoading(false));
+  }, []);
 
   const filtered =
-    active === "all" ? products : products.filter(p => p.category === active);
+    active === "all"
+      ? products
+      : products.filter(p => p.category === active);
 
   return (
     <section id="products" className="py-20">
@@ -43,13 +64,33 @@ export function ProductSection({ onView }: { onView: (p: Product) => void }) {
           ))}
         </div>
 
-        <div className="mt-12 grid grid-cols-1 gap-7 sm:grid-cols-2 lg:grid-cols-3">
-          <AnimatePresence mode="popLayout">
-            {filtered.map(p => (
-              <ProductCard key={p.id} product={p} onView={onView} />
+        {loading ? (
+          <div className="mt-12 flex justify-center py-20">
+            <Loader2 className="animate-spin text-neon" size={32} />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="mt-12 py-20 text-center">
+            <p className="text-muted">
+              {products.length === 0
+                ? "Belum ada produk. Tambahkan produk di dashboard admin."
+                : "Tidak ada produk di kategori ini."}
+            </p>
+          </div>
+        ) : (
+          <div className="mt-12 grid grid-cols-1 gap-7 sm:grid-cols-2 lg:grid-cols-3">
+            {filtered.map((p, i) => (
+              <motion.div
+                key={p._id || i}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.05 }}
+              >
+                <ProductCard product={p} onView={onView} />
+              </motion.div>
             ))}
-          </AnimatePresence>
-        </div>
+          </div>
+        )}
       </div>
     </section>
   );
