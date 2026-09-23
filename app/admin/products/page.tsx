@@ -11,11 +11,29 @@ import {
   Save,
   Package,
   Search,
+  Loader2,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { GlassCard } from "@/components/ui/GlassCard";
-import { Product } from "@/types";
-import { products as seedProducts } from "@/lib/data";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { ToastContainer } from "@/components/ui/Toast";
+import { useToast } from "@/lib/useToast";
+
+interface Product {
+  _id?: string;
+  title: string;
+  game: string;
+  category: string;
+  price: number;
+  priceLabel: string;
+  features: string[];
+  badge?: string | null;
+  status: string;
+  version: string;
+  compatibility: string;
+  delivery: string;
+  description: string;
+}
 
 export default function AdminProductsPage() {
   const router = useRouter();
@@ -23,54 +41,86 @@ export default function AdminProductsPage() {
   const [editing, setEditing] = useState<Product | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [query, setQuery] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
+  const [loading, setLoading] = useState(true);
+  const toast = useToast();
 
-useEffect(() => {
-  const role = localStorage.getItem("cyberRole");
-  const isAuth = localStorage.getItem("cyberAuth");
+  useEffect(() => {
+    const role = localStorage.getItem("cyberRole");
+    const isAuth = localStorage.getItem("cyberAuth");
 
-  if (isAuth !== "true") {
-    router.replace("/login");
-    return;
-  }
-  if (role !== "admin") {
-    router.replace("/");
-    return;
-  }
-
-  const saved = localStorage.getItem("cyberProducts");
-  if (saved) {
-    setProducts(JSON.parse(saved));
-  } else {
-    setProducts(seedProducts);
-    localStorage.setItem("cyberProducts", JSON.stringify(seedProducts));
-  }
-}, [router]);
-
-  const saveAll = (list: Product[]) => {
-    setProducts(list);
-    localStorage.setItem("cyberProducts", JSON.stringify(list));
-  };
-
-  const handleDelete = (id: number) => {
-    if (!confirm("Yakin hapus produk ini?")) return;
-    saveAll(products.filter(p => p.id !== id));
-  };
-
-  const handleSave = (p: Product) => {
-    const exists = products.find(x => x.id === p.id);
-    if (exists) {
-      saveAll(products.map(x => (x.id === p.id ? p : x)));
-    } else {
-      const newId = Math.max(0, ...products.map(x => x.id)) + 1;
-      saveAll([...products, { ...p, id: newId }]);
+    if (isAuth !== "true") {
+      router.replace("/login");
+      return;
     }
-    setShowForm(false);
-    setEditing(null);
+    if (role !== "admin") {
+      router.replace("/");
+      return;
+    }
+
+    fetchProducts();
+  }, [router]);
+
+  const fetchProducts = async () => {
+    try {
+      const res = await fetch("/api/products");
+      const data = await res.json();
+      setProducts(data);
+    } catch {
+      toast.error("Gagal memuat produk");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const filtered = products.filter(p =>
-    p.title.toLowerCase().includes(query.toLowerCase()) ||
-    p.game.toLowerCase().includes(query.toLowerCase())
+  const handleDelete = async () => {
+    if (!deleteTarget?._id) return;
+    try {
+      const res = await fetch(`/api/products/${deleteTarget._id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Gagal hapus");
+      setProducts(products.filter(p => p._id !== deleteTarget._id));
+      toast.success(`Produk "${deleteTarget.title}" berhasil dihapus.`);
+      setDeleteTarget(null);
+    } catch {
+      toast.error("Gagal menghapus produk");
+    }
+  };
+
+  const handleSave = async (p: Product) => {
+    const exists = p._id && products.find(x => x._id === p._id);
+    const url = exists ? `/api/products/${p._id}` : "/api/products";
+    const method = exists ? "PUT" : "POST";
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(p),
+      });
+      if (!res.ok) throw new Error("Gagal simpan");
+
+      const saved = await res.json();
+
+      if (exists) {
+        setProducts(products.map(x => (x._id === p._id ? saved : x)));
+        toast.success("Produk berhasil diperbarui.");
+      } else {
+        setProducts([...products, saved]);
+        toast.success("Produk baru berhasil ditambahkan.");
+      }
+      setShowForm(false);
+      setEditing(null);
+    } catch {
+      toast.error("Gagal menyimpan produk");
+    }
+  };
+
+  const filtered = products.filter(
+    p =>
+      p.title.toLowerCase().includes(query.toLowerCase()) ||
+      p.game.toLowerCase().includes(query.toLowerCase())
   );
 
   return (
@@ -78,7 +128,6 @@ useEffect(() => {
       <Navbar />
       <main className="min-h-screen pt-20 pb-24">
         <div className="mx-auto max-w-[1300px] px-6">
-          {/* Header */}
           <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 text-xs text-muted">
@@ -104,7 +153,6 @@ useEffect(() => {
             </button>
           </div>
 
-          {/* Search */}
           <div className="relative mb-6 max-w-md">
             <Search
               size={16}
@@ -118,58 +166,74 @@ useEffect(() => {
             />
           </div>
 
-          {/* List */}
-          <div className="space-y-3">
-            {filtered.map(p => (
-              <GlassCard
-                key={p.id}
-                className="flex flex-wrap items-center gap-4 p-5"
-                hover={false}
-              >
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[rgba(0,224,255,0.08)] text-neon">
-                  <Package size={22} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-bold">{p.title}</div>
-                  <div className="text-xs text-neon">{p.game}</div>
-                  <div className="mt-1 text-xs text-muted">
-                    {p.category} · {p.version}
+          {loading ? (
+            <div className="flex justify-center py-20">
+              <Loader2 className="animate-spin text-neon" size={32} />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filtered.map(p => (
+                <GlassCard
+                  key={p._id}
+                  className="flex flex-wrap items-center gap-4 p-5"
+                  hover={false}
+                >
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[rgba(0,224,255,0.08)] text-neon">
+                    <Package size={22} />
                   </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-[0.65rem] uppercase tracking-wider text-muted">
-                    Harga
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-bold">{p.title}</div>
+                    <div className="text-xs text-neon">{p.game}</div>
+                    <div className="mt-1 text-xs text-muted">
+                      {p.category} · {p.version}
+                    </div>
                   </div>
-                  <div className="font-bold">{p.priceLabel}</div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      setEditing(p);
-                      setShowForm(true);
-                    }}
-                    className="rounded-lg border border-white/10 p-2.5 text-muted transition hover:border-neon hover:text-neon"
-                  >
-                    <Pencil size={16} />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(p.id)}
-                    className="rounded-lg border border-white/10 p-2.5 text-muted transition hover:border-[#ff5050] hover:text-[#ff5050]"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </GlassCard>
-            ))}
+                  <div className="text-right">
+                    <div className="text-[0.65rem] uppercase tracking-wider text-muted">
+                      Harga
+                    </div>
+                    <div className="font-bold">{p.priceLabel}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setEditing(p);
+                        setShowForm(true);
+                      }}
+                      className="rounded-lg border border-white/10 p-2.5 text-muted transition hover:border-neon hover:text-neon"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button
+                      onClick={() => setDeleteTarget(p)}
+                      className="rounded-lg border border-white/10 p-2.5 text-muted transition hover:border-[#ff5050] hover:text-[#ff5050]"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </GlassCard>
+              ))}
 
-            {filtered.length === 0 && (
-              <div className="py-16 text-center text-muted">
-                Tidak ada produk yang cocok
-              </div>
-            )}
-          </div>
+              {filtered.length === 0 && (
+                <div className="py-16 text-center text-muted">
+                  Tidak ada produk yang cocok
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </main>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Hapus Produk?"
+        message={`Produk "${deleteTarget?.title}" akan dihapus permanen. Tindakan ini tidak bisa dibatalkan.`}
+        confirmText="Ya, Hapus"
+        cancelText="Batal"
+        variant="danger"
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
 
       <AnimatePresence>
         {showForm && (
@@ -183,11 +247,11 @@ useEffect(() => {
           />
         )}
       </AnimatePresence>
+
+      <ToastContainer toasts={toast.toasts} onDismiss={toast.dismiss} />
     </>
   );
 }
-
-/* ---------- Form Modal ---------- */
 
 function ProductForm({
   initial,
@@ -200,7 +264,6 @@ function ProductForm({
 }) {
   const [form, setForm] = useState<Product>(
     initial || {
-      id: 0,
       title: "",
       game: "",
       category: "free-fire",
@@ -288,7 +351,7 @@ function ProductForm({
             <Field label="Kategori">
               <select
                 value={form.category}
-                onChange={e => update("category", e.target.value as any)}
+                onChange={e => update("category", e.target.value)}
                 className="admin-input"
               >
                 <option value="free-fire">Free Fire</option>
@@ -314,7 +377,7 @@ function ProductForm({
               <select
                 value={form.badge || ""}
                 onChange={e =>
-                  update("badge", (e.target.value || undefined) as any)
+                  update("badge", e.target.value || null)
                 }
                 className="admin-input"
               >
@@ -322,30 +385,6 @@ function ProductForm({
                 <option value="best">★ BEST</option>
                 <option value="new">NEW</option>
               </select>
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Field label="Version">
-              <input
-                value={form.version}
-                onChange={e => update("version", e.target.value)}
-                className="admin-input"
-              />
-            </Field>
-            <Field label="Compatibility">
-              <input
-                value={form.compatibility}
-                onChange={e => update("compatibility", e.target.value)}
-                className="admin-input"
-              />
-            </Field>
-            <Field label="Delivery">
-              <input
-                value={form.delivery}
-                onChange={e => update("delivery", e.target.value)}
-                className="admin-input"
-              />
             </Field>
           </div>
 
