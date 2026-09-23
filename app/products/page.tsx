@@ -11,6 +11,7 @@ import {
   Save,
   Package,
   Search,
+  Loader2,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -18,7 +19,9 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { ToastContainer } from "@/components/ui/Toast";
 import { useToast } from "@/lib/useToast";
 import { Product } from "@/types";
-import { products as seedProducts } from "@/lib/data";
+
+// Helper: ambil identifier (MongoDB atau local)
+const getKey = (p: Product): string => p._id || String(p.id ?? "");
 
 export default function AdminProductsPage() {
   const router = useRouter();
@@ -27,6 +30,7 @@ export default function AdminProductsPage() {
   const [showForm, setShowForm] = useState(false);
   const [query, setQuery] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const toast = useToast();
 
@@ -43,45 +47,79 @@ export default function AdminProductsPage() {
       return;
     }
 
-    const saved = localStorage.getItem("cyberProducts");
-    if (saved) {
-      setProducts(JSON.parse(saved));
-    } else {
-      setProducts(seedProducts);
-      localStorage.setItem("cyberProducts", JSON.stringify(seedProducts));
-    }
+    fetchProducts();
   }, [router]);
 
-  const saveAll = (list: Product[]) => {
-    setProducts(list);
-    localStorage.setItem("cyberProducts", JSON.stringify(list));
-  };
-
-  const handleDelete = () => {
-    if (!deleteTarget) return;
-    saveAll(products.filter(p => p.id !== deleteTarget.id));
-    toast.success(`Produk "${deleteTarget.title}" berhasil dihapus.`);
-    setDeleteTarget(null);
-  };
-
-  const handleSave = (p: Product) => {
-    const exists = products.find(x => x.id === p.id);
-    if (exists) {
-      saveAll(products.map(x => (x.id === p.id ? p : x)));
-      toast.success("Produk berhasil diperbarui.");
-    } else {
-      const newId = Math.max(0, ...products.map(x => x.id)) + 1;
-      saveAll([...products, { ...p, id: newId }]);
-      toast.success("Produk baru berhasil ditambahkan.");
+  const fetchProducts = async () => {
+    try {
+      const res = await fetch("/api/products", { cache: "no-store" });
+      if (!res.ok) throw new Error("Fetch failed");
+      const data = await res.json();
+      setProducts(Array.isArray(data) ? data : []);
+    } catch {
+      toast.error("Gagal memuat produk");
+      setProducts([]);
+    } finally {
+      setLoading(false);
     }
-    setShowForm(false);
-    setEditing(null);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    const key = getKey(deleteTarget);
+    if (!key) {
+      toast.error("Produk tidak valid");
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/products/${key}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Delete failed");
+
+      setProducts(products.filter(p => getKey(p) !== key));
+      toast.success(`Produk "${deleteTarget.title}" berhasil dihapus.`);
+      setDeleteTarget(null);
+    } catch {
+      toast.error("Gagal menghapus produk");
+    }
+  };
+
+  const handleSave = async (p: Product) => {
+    const key = p._id;
+    const exists = key && products.find(x => x._id === key);
+    const url = exists ? `/api/products/${key}` : "/api/products";
+    const method = exists ? "PUT" : "POST";
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(p),
+      });
+      if (!res.ok) throw new Error("Save failed");
+
+      const saved = await res.json();
+
+      if (exists) {
+        setProducts(products.map(x => (x._id === key ? saved : x)));
+        toast.success("Produk berhasil diperbarui.");
+      } else {
+        setProducts([...products, saved]);
+        toast.success("Produk baru berhasil ditambahkan.");
+      }
+      setShowForm(false);
+      setEditing(null);
+    } catch {
+      toast.error("Gagal menyimpan produk");
+    }
   };
 
   const filtered = products.filter(
     p =>
-      p.title.toLowerCase().includes(query.toLowerCase()) ||
-      p.game.toLowerCase().includes(query.toLowerCase())
+      p.title?.toLowerCase().includes(query.toLowerCase()) ||
+      p.game?.toLowerCase().includes(query.toLowerCase())
   );
 
   return (
@@ -131,60 +169,68 @@ export default function AdminProductsPage() {
             />
           </div>
 
-          {/* List */}
-          <div className="space-y-3">
-            {filtered.map(p => (
-              <GlassCard
-                key={p.id}
-                className="flex flex-wrap items-center gap-4 p-5"
-                hover={false}
-              >
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[rgba(0,224,255,0.08)] text-neon">
-                  <Package size={22} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-bold">{p.title}</div>
-                  <div className="text-xs text-neon">{p.game}</div>
-                  <div className="mt-1 text-xs text-muted">
-                    {p.category} · {p.version}
+          {/* Loading */}
+          {loading ? (
+            <div className="flex justify-center py-20">
+              <Loader2 className="animate-spin text-neon" size={32} />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filtered.map(p => (
+                <GlassCard
+                  key={getKey(p)}
+                  className="flex flex-wrap items-center gap-4 p-5"
+                  hover={false}
+                >
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[rgba(0,224,255,0.08)] text-neon">
+                    <Package size={22} />
                   </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-[0.65rem] uppercase tracking-wider text-muted">
-                    Harga
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-bold">{p.title}</div>
+                    <div className="text-xs text-neon">{p.game}</div>
+                    <div className="mt-1 text-xs text-muted">
+                      {p.category} · {p.version}
+                    </div>
                   </div>
-                  <div className="font-bold">{p.priceLabel}</div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      setEditing(p);
-                      setShowForm(true);
-                    }}
-                    className="rounded-lg border border-white/10 p-2.5 text-muted transition hover:border-neon hover:text-neon"
-                  >
-                    <Pencil size={16} />
-                  </button>
-                  <button
-                    onClick={() => setDeleteTarget(p)}
-                    className="rounded-lg border border-white/10 p-2.5 text-muted transition hover:border-[#ff5050] hover:text-[#ff5050]"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </GlassCard>
-            ))}
+                  <div className="text-right">
+                    <div className="text-[0.65rem] uppercase tracking-wider text-muted">
+                      Harga
+                    </div>
+                    <div className="font-bold">{p.priceLabel}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setEditing(p);
+                        setShowForm(true);
+                      }}
+                      className="rounded-lg border border-white/10 p-2.5 text-muted transition hover:border-neon hover:text-neon"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button
+                      onClick={() => setDeleteTarget(p)}
+                      className="rounded-lg border border-white/10 p-2.5 text-muted transition hover:border-[#ff5050] hover:text-[#ff5050]"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </GlassCard>
+              ))}
 
-            {filtered.length === 0 && (
-              <div className="py-16 text-center text-muted">
-                Tidak ada produk yang cocok
-              </div>
-            )}
-          </div>
+              {filtered.length === 0 && (
+                <div className="py-16 text-center text-muted">
+                  {products.length === 0
+                    ? "Belum ada produk. Tambahkan produk atau buka /api/seed untuk isi data awal."
+                    : "Tidak ada produk yang cocok"}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </main>
 
-      {/* Confirm delete dialog */}
+      {/* Confirm delete */}
       <ConfirmDialog
         open={!!deleteTarget}
         title="Hapus Produk?"
@@ -229,7 +275,6 @@ function ProductForm({
 }) {
   const [form, setForm] = useState<Product>(
     initial || {
-      id: 0,
       title: "",
       game: "",
       category: "free-fire",
@@ -343,7 +388,7 @@ function ProductForm({
               <select
                 value={form.badge || ""}
                 onChange={e =>
-                  update("badge", (e.target.value || undefined) as any)
+                  update("badge", (e.target.value || null) as any)
                 }
                 className="admin-input"
               >

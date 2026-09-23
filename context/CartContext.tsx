@@ -1,13 +1,24 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  ReactNode,
+} from "react";
 import { CartItem, Product } from "@/types";
+
+// Helper: ambil identifier unik dari produk (MongoDB atau local)
+const getItemKey = (item: Product | CartItem): string => {
+  return item._id || String(item.id ?? "");
+};
 
 interface CartContextValue {
   cart: CartItem[];
   addToCart: (p: Product) => void;
-  removeFromCart: (id: number) => void;
-  updateQty: (id: number, qty: number) => void;
+  removeFromCart: (key: string) => void;
+  updateQty: (key: string, qty: number) => void;
   clearCart: () => void;
   subtotal: number;
   discount: number;
@@ -32,32 +43,49 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [discountPercent, setDiscountPercent] = useState(0);
   const [cartOpen, setCartOpen] = useState(false);
 
+  // Load cart dari localStorage
   useEffect(() => {
     const saved = localStorage.getItem("cyberCart");
-    if (saved) setCart(JSON.parse(saved));
+    if (saved) {
+      try {
+        setCart(JSON.parse(saved));
+      } catch {
+        setCart([]);
+      }
+    }
   }, []);
 
+  // Save cart ke localStorage
   useEffect(() => {
     localStorage.setItem("cyberCart", JSON.stringify(cart));
   }, [cart]);
 
   const addToCart = (p: Product) => {
     setCart(prev => {
-      const existing = prev.find(i => i.id === p.id);
+      const key = getItemKey(p);
+      const existing = prev.find(i => getItemKey(i) === key);
       if (existing) {
-        return prev.map(i => i.id === p.id ? { ...i, quantity: i.quantity + 1 } : i);
+        return prev.map(i =>
+          getItemKey(i) === key
+            ? { ...i, quantity: i.quantity + 1 }
+            : i
+        );
       }
       return [...prev, { ...p, quantity: 1 }];
     });
   };
 
-  const removeFromCart = (id: number) => {
-    setCart(prev => prev.filter(i => i.id !== id));
+  const removeFromCart = (key: string) => {
+    setCart(prev => prev.filter(i => getItemKey(i) !== key));
   };
 
-  const updateQty = (id: number, qty: number) => {
-    if (qty < 1) return removeFromCart(id);
-    setCart(prev => prev.map(i => i.id === id ? { ...i, quantity: qty } : i));
+  const updateQty = (key: string, qty: number) => {
+    if (qty < 1) return removeFromCart(key);
+    setCart(prev =>
+      prev.map(i =>
+        getItemKey(i) === key ? { ...i, quantity: qty } : i
+      )
+    );
   };
 
   const clearCart = () => {
@@ -65,7 +93,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setDiscountPercent(0);
   };
 
-  const subtotal = cart.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  const subtotal = cart.reduce(
+    (sum, i) => sum + i.price * i.quantity,
+    0
+  );
   const discount = Math.round((subtotal * discountPercent) / 100);
   const total = subtotal - discount;
   const count = cart.reduce((sum, i) => sum + i.quantity, 0);
