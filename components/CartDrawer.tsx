@@ -8,6 +8,10 @@ import { Button } from "./ui/Button";
 import { ToastContainer } from "./ui/Toast";
 import { useToast } from "@/lib/useToast";
 
+// Helper untuk ambil key (support MongoDB _id + local id)
+const getKey = (item: any): string =>
+  item._id || String(item.id ?? "");
+
 export function CartDrawer({ onCheckout }: { onCheckout: () => void }) {
   const {
     cart,
@@ -38,9 +42,10 @@ export function CartDrawer({ onCheckout }: { onCheckout: () => void }) {
     }
   };
 
-  const handleRemove = (id: number, title: string) => {
-    removeFromCart(id);
-    toast.info(`${title} dihapus dari keranjang`);
+  const handleRemove = (item: any) => {
+    const key = getKey(item);
+    removeFromCart(key);
+    toast.info(`${item.title} dihapus dari keranjang`);
   };
 
   const fmt = (n: number) => `Rp ${n.toLocaleString("id-ID")}`;
@@ -80,51 +85,54 @@ export function CartDrawer({ onCheckout }: { onCheckout: () => void }) {
                     Keranjang masih kosong
                   </div>
                 ) : (
-                  cart.map(item => (
-                    <div
-                      key={item.id}
-                      className="flex items-center gap-3 border-b border-white/5 py-4"
-                    >
-                      <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-[rgba(0,224,255,0.06)] text-neon">
-                        <Gamepad2 size={22} />
-                      </div>
-                      <div className="flex-1">
-                        <div className="text-sm font-semibold">
-                          {item.title}
-                        </div>
-                        <div className="text-xs font-semibold text-neon">
-                          {item.priceLabel}
-                        </div>
-                        <div className="mt-1 flex items-center gap-2">
-                          <button
-                            onClick={() =>
-                              updateQty(item.id, item.quantity - 1)
-                            }
-                            className="flex h-6 w-6 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xs font-bold transition hover:border-neon"
-                          >
-                            <Minus size={12} />
-                          </button>
-                          <span className="w-6 text-center text-sm font-semibold">
-                            {item.quantity}
-                          </span>
-                          <button
-                            onClick={() =>
-                              updateQty(item.id, item.quantity + 1)
-                            }
-                            className="flex h-6 w-6 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xs font-bold transition hover:border-neon"
-                          >
-                            <Plus size={12} />
-                          </button>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleRemove(item.id, item.title)}
-                        className="text-muted transition hover:text-red-400"
+                  cart.map(item => {
+                    const key = getKey(item);
+                    return (
+                      <div
+                        key={key}
+                        className="flex items-center gap-3 border-b border-white/5 py-4"
                       >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  ))
+                        <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-[rgba(0,224,255,0.06)] text-neon">
+                          <Gamepad2 size={22} />
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-sm font-semibold">
+                            {item.title}
+                          </div>
+                          <div className="text-xs font-semibold text-neon">
+                            {item.priceLabel}
+                          </div>
+                          <div className="mt-1 flex items-center gap-2">
+                            <button
+                              onClick={() =>
+                                updateQty(key, item.quantity - 1)
+                              }
+                              className="flex h-6 w-6 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xs font-bold transition hover:border-neon"
+                            >
+                              <Minus size={12} />
+                            </button>
+                            <span className="w-6 text-center text-sm font-semibold">
+                              {item.quantity}
+                            </span>
+                            <button
+                              onClick={() =>
+                                updateQty(key, item.quantity + 1)
+                              }
+                              className="flex h-6 w-6 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xs font-bold transition hover:border-neon"
+                            >
+                              <Plus size={12} />
+                            </button>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleRemove(item)}
+                          className="text-muted transition hover:text-red-400"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    );
+                  })
                 )}
               </div>
 
@@ -184,7 +192,6 @@ export function CartDrawer({ onCheckout }: { onCheckout: () => void }) {
         )}
       </AnimatePresence>
 
-      {/* Toast - selalu render di luar AnimatePresence */}
       <ToastContainer toasts={toast.toasts} onDismiss={toast.dismiss} />
     </>
   );
