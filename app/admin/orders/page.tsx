@@ -16,6 +16,7 @@ import {
   Mail,
   User,
   Calendar,
+  Loader2,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { GlassCard } from "@/components/ui/GlassCard";
@@ -23,6 +24,7 @@ import { GlassCard } from "@/components/ui/GlassCard";
 type Status = "PENDING" | "PAID" | "PROCESSING" | "COMPLETED" | "CANCELLED";
 
 interface OrderRow {
+  _id: string;
   orderId: string;
   product: string;
   customer: string;
@@ -31,6 +33,7 @@ interface OrderRow {
   total: string;
   date: string;
   status: Status;
+  payment?: string;
 }
 
 const STATUS_COLORS: Record<Status, string> = {
@@ -45,70 +48,18 @@ const STATUS_COLORS: Record<Status, string> = {
     "bg-[rgba(255,80,80,0.12)] text-[#ff5050] border-[rgba(255,80,80,0.3)]",
 };
 
-const INITIAL_ORDERS: OrderRow[] = [
-  {
-    orderId: "CYBER-20260115-A1B2C3",
-    product: "ANDROID PREMIUM",
-    customer: "Rizky Pratama",
-    whatsapp: "0812-3456-7890",
-    email: "rizky@example.com",
-    total: "Rp 20.000",
-    date: "2026-01-15",
-    status: "COMPLETED",
-  },
-  {
-    orderId: "CYBER-20260120-D4E5F6",
-    product: "CS2 PREMIUM",
-    customer: "Dewi Lestari",
-    whatsapp: "0812-1111-2222",
-    email: "dewi@example.com",
-    total: "Rp 50.000",
-    date: "2026-01-20",
-    status: "PENDING",
-  },
-  {
-    orderId: "CYBER-20260122-G7H8I9",
-    product: "ROBLOX PREMIUM",
-    customer: "Andi Saputra",
-    whatsapp: "0812-3333-4444",
-    email: "andi@example.com",
-    total: "Rp 15.000",
-    date: "2026-01-22",
-    status: "PROCESSING",
-  },
-  {
-    orderId: "CYBER-20260125-J1K2L3",
-    product: "STANDOFF 2 PREMIUM",
-    customer: "Sari Wulandari",
-    whatsapp: "0812-5555-6666",
-    email: "sari@example.com",
-    total: "Rp 50.000",
-    date: "2026-01-25",
-    status: "CANCELLED",
-  },
-  {
-    orderId: "CYBER-20260128-M4N5O6",
-    product: "ANDROID STABILIZER",
-    customer: "Bagas Nugroho",
-    whatsapp: "0812-7777-8888",
-    email: "bagas@example.com",
-    total: "Rp 50.000",
-    date: "2026-01-28",
-    status: "PAID",
-  },
-];
-
 export default function AdminOrdersPage() {
   const router = useRouter();
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [filter, setFilter] = useState<Status | "ALL">("ALL");
   const [query, setQuery] = useState("");
   const [detail, setDetail] = useState<OrderRow | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const toast = useToast();
 
   useEffect(() => {
-    const role = fetch("/api/orders")("cyberRole");
+    const role = localStorage.getItem("cyberRole");
     const isAuth = localStorage.getItem("cyberAuth");
 
     if (isAuth !== "true") {
@@ -120,30 +71,50 @@ export default function AdminOrdersPage() {
       return;
     }
 
-    const saved = localStorage.getItem("cyberOrders");
-    const list = saved ? JSON.parse(saved) : INITIAL_ORDERS;
-    setOrders(list);
-    if (!saved) localStorage.setItem("cyberOrders", JSON.stringify(list));
+    loadOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
-  const save = (list: OrderRow[]) => {
-    setOrders(list);
-    localStorage.setItem("cyberOrders", JSON.stringify(list));
-  };
+  async function loadOrders() {
+    try {
+      const res = await fetch("/api/orders", { cache: "no-store" });
+      if (!res.ok) throw new Error("Fetch failed");
+      const data = await res.json();
+      setOrders(Array.isArray(data) ? data : []);
+    } catch {
+      toast.error("Gagal memuat order");
+      setOrders([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
-  const changeStatus = (orderId: string, status: Status) => {
-    save(orders.map(o => (o.orderId === orderId ? { ...o, status } : o)));
-    toast.success(`Status ${orderId} diubah ke ${status}`);
-  };
+  async function updateStatus(id: string, status: Status) {
+    try {
+      const res = await fetch(`/api/orders/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error("Update failed");
+
+      setOrders(prev =>
+        prev.map(o => (o._id === id ? { ...o, status } : o))
+      );
+      toast.success(`Status diubah ke ${status}`);
+    } catch {
+      toast.error("Gagal update status");
+    }
+  }
 
   const filtered = orders.filter(o => {
     if (filter !== "ALL" && o.status !== filter) return false;
     if (query) {
       const q = query.toLowerCase();
       return (
-        o.orderId.toLowerCase().includes(q) ||
-        o.customer.toLowerCase().includes(q) ||
-        o.product.toLowerCase().includes(q)
+        o.orderId?.toLowerCase().includes(q) ||
+        o.customer?.toLowerCase().includes(q) ||
+        o.product?.toLowerCase().includes(q)
       );
     }
     return true;
@@ -180,7 +151,7 @@ export default function AdminOrdersPage() {
             </p>
           </div>
 
-          {/* Filter tabs with counts */}
+          {/* Filter tabs */}
           <div className="mb-6 flex flex-wrap gap-2">
             {(
               [
@@ -201,8 +172,7 @@ export default function AdminOrdersPage() {
                     : "border-white/10 text-muted hover:border-neon hover:text-white"
                 }`}
               >
-                {s}{" "}
-                <span className="ml-1.5 opacity-60">({counts[s]})</span>
+                {s} <span className="ml-1.5 opacity-60">({counts[s]})</span>
               </button>
             ))}
           </div>
@@ -221,75 +191,79 @@ export default function AdminOrdersPage() {
             />
           </div>
 
-          {/* List */}
-          <div className="space-y-3">
-            {filtered.map(o => (
-              <GlassCard
-                key={o.orderId}
-                className="p-5"
-                hover={false}
-              >
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[rgba(0,224,255,0.08)] text-neon">
-                    <ShoppingCart size={20} />
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="font-mono text-[0.7rem] text-muted">
-                      {o.orderId}
+          {/* Loading */}
+          {loading ? (
+            <div className="flex justify-center py-20">
+              <Loader2 className="animate-spin text-neon" size={32} />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filtered.map(o => (
+                <GlassCard key={o._id} className="p-5" hover={false}>
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[rgba(0,224,255,0.08)] text-neon">
+                      <ShoppingCart size={20} />
                     </div>
-                    <div className="mt-0.5 font-bold">{o.product}</div>
-                    <div className="mt-0.5 text-xs text-muted">
-                      {o.customer} · {o.whatsapp}
-                    </div>
-                  </div>
 
-                  <div className="flex flex-wrap items-center gap-4">
-                    <div className="text-right">
-                      <div className="text-[0.65rem] uppercase tracking-wider text-muted">
-                        Total
+                    <div className="min-w-0 flex-1">
+                      <div className="font-mono text-[0.7rem] text-muted">
+                        {o.orderId}
                       </div>
-                      <div className="font-bold">{o.total}</div>
-                    </div>
-                    <div className="hidden text-right sm:block">
-                      <div className="text-[0.65rem] uppercase tracking-wider text-muted">
-                        Tanggal
+                      <div className="mt-0.5 font-bold">{o.product}</div>
+                      <div className="mt-0.5 text-xs text-muted">
+                        {o.customer} · {o.whatsapp}
                       </div>
-                      <div className="text-sm">{o.date}</div>
                     </div>
 
-                    {/* Status dropdown */}
-                    <select
-                      value={o.status}
-                      onChange={e =>
-                        changeStatus(o.orderId, e.target.value as Status)
-                      }
-                      className={`cursor-pointer rounded-full border px-4 py-2 text-xs font-bold ${STATUS_COLORS[o.status]}`}
-                    >
-                      <option value="PENDING">PENDING</option>
-                      <option value="PAID">PAID</option>
-                      <option value="PROCESSING">PROCESSING</option>
-                      <option value="COMPLETED">COMPLETED</option>
-                      <option value="CANCELLED">CANCELLED</option>
-                    </select>
+                    <div className="flex flex-wrap items-center gap-4">
+                      <div className="text-right">
+                        <div className="text-[0.65rem] uppercase tracking-wider text-muted">
+                          Total
+                        </div>
+                        <div className="font-bold">{o.total}</div>
+                      </div>
+                      <div className="hidden text-right sm:block">
+                        <div className="text-[0.65rem] uppercase tracking-wider text-muted">
+                          Tanggal
+                        </div>
+                        <div className="text-sm">{o.date}</div>
+                      </div>
 
-                    <button
-                      onClick={() => setDetail(o)}
-                      className="rounded-lg border border-white/10 p-2.5 text-muted transition hover:border-neon hover:text-neon"
-                    >
-                      <Eye size={16} />
-                    </button>
+                      {/* Status dropdown */}
+                      <select
+                        value={o.status}
+                        onChange={e =>
+                          updateStatus(o._id, e.target.value as Status)
+                        }
+                        className={`cursor-pointer rounded-full border px-4 py-2 text-xs font-bold ${STATUS_COLORS[o.status]}`}
+                      >
+                        <option value="PENDING">PENDING</option>
+                        <option value="PAID">PAID</option>
+                        <option value="PROCESSING">PROCESSING</option>
+                        <option value="COMPLETED">COMPLETED</option>
+                        <option value="CANCELLED">CANCELLED</option>
+                      </select>
+
+                      <button
+                        onClick={() => setDetail(o)}
+                        className="rounded-lg border border-white/10 p-2.5 text-muted transition hover:border-neon hover:text-neon"
+                      >
+                        <Eye size={16} />
+                      </button>
+                    </div>
                   </div>
+                </GlassCard>
+              ))}
+
+              {filtered.length === 0 && (
+                <div className="py-16 text-center text-muted">
+                  {orders.length === 0
+                    ? "Belum ada order. Order dari customer akan muncul di sini."
+                    : "Tidak ada order yang cocok"}
                 </div>
-              </GlassCard>
-            ))}
-
-            {filtered.length === 0 && (
-              <div className="py-16 text-center text-muted">
-                Tidak ada order yang cocok
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       </main>
 
@@ -355,7 +329,6 @@ export default function AdminOrdersPage() {
         )}
       </AnimatePresence>
 
-      {/* Toast */}
       <ToastContainer toasts={toast.toasts} onDismiss={toast.dismiss} />
     </>
   );
