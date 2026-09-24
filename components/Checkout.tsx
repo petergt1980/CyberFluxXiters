@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, CheckCircle2 } from "lucide-react";
+import { X, CheckCircle2, Loader2 } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { Button } from "./ui/Button";
 
 export function Checkout({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { cart, total, clearCart } = useCart();
   const [done, setDone] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [orderId, setOrderId] = useState("");
   const [form, setForm] = useState({
     name: "",
     wa: "",
@@ -18,16 +20,59 @@ export function Checkout({ open, onClose }: { open: boolean; onClose: () => void
 
   const fmt = (n: number) => `Rp ${n.toLocaleString("id-ID")}`;
 
-  const submit = (e: React.FormEvent) => {
+  const generateOrderId = () => {
+    const d = new Date();
+    const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+    const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
+    return `CYBER-${ymd}-${rand}`;
+  };
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name || !form.wa || !form.email) return;
-    setDone(true);
-    setTimeout(() => {
-      clearCart();
-      setDone(false);
-      onClose();
-      setForm({ name: "", wa: "", email: "", payment: "QRIS" });
-    }, 2200);
+    if (cart.length === 0) return;
+
+    setLoading(true);
+
+    const newOrderId = generateOrderId();
+    const productNames = cart.map(i => `${i.title} ×${i.quantity}`).join(", ");
+
+    const orderData = {
+      orderId: newOrderId,
+      product: productNames,
+      customer: form.name,
+      whatsapp: form.wa,
+      email: form.email,
+      total: fmt(total),
+      date: new Date().toISOString().split("T")[0],
+      status: "PENDING",
+      payment: form.payment,
+    };
+
+    try {
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(orderData),
+      });
+
+      if (!res.ok) throw new Error("Gagal buat order");
+
+      setOrderId(newOrderId);
+      setDone(true);
+
+      // Auto-close setelah 4 detik
+      setTimeout(() => {
+        clearCart();
+        setDone(false);
+        setLoading(false);
+        onClose();
+        setForm({ name: "", wa: "", email: "", payment: "QRIS" });
+      }, 4000);
+    } catch (err) {
+      alert("Gagal membuat pesanan. Coba lagi.");
+      setLoading(false);
+    }
   };
 
   return (
@@ -57,7 +102,14 @@ export function Checkout({ open, onClose }: { open: boolean; onClose: () => void
                 <CheckCircle2 size={64} className="text-[#00ffaa]" />
                 <h3 className="mt-4 text-2xl font-extrabold">Order Berhasil!</h3>
                 <p className="mt-2 text-sm text-muted">
-                  Tim kami akan menghubungi kamu via WhatsApp.
+                  Order ID kamu:
+                </p>
+                <p className="mt-2 rounded-xl border border-[rgba(0,224,255,0.3)] bg-[rgba(0,224,255,0.08)] px-4 py-2 font-mono text-sm font-bold text-neon">
+                  {orderId}
+                </p>
+                <p className="mt-4 max-w-xs text-xs text-muted">
+                  Simpan Order ID ini. Tim kami akan menghubungi kamu via
+                  WhatsApp untuk konfirmasi & pengiriman produk.
                 </p>
               </div>
             ) : (
@@ -125,7 +177,10 @@ export function Checkout({ open, onClose }: { open: boolean; onClose: () => void
                   <div className="rounded-2xl border border-[rgba(0,224,255,0.1)] bg-white/[0.03] p-4">
                     <div className="mb-2 text-sm font-bold">Ringkasan Pesanan</div>
                     {cart.map(i => (
-                      <div key={i.id} className="flex justify-between text-xs text-muted">
+                      <div
+                        key={i._id || i.id}
+                        className="flex justify-between text-xs text-muted"
+                      >
                         <span>
                           {i.title} × {i.quantity}
                         </span>
@@ -138,8 +193,20 @@ export function Checkout({ open, onClose }: { open: boolean; onClose: () => void
                     </div>
                   </div>
 
-                  <Button variant="primary" type="submit" className="w-full py-4">
-                    Confirm Order
+                  <Button
+                    variant="primary"
+                    type="submit"
+                    className="w-full py-4"
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        Memproses...
+                      </>
+                    ) : (
+                      "Confirm Order"
+                    )}
                   </Button>
                 </form>
               </>

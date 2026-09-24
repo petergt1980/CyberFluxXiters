@@ -108,7 +108,7 @@ export default function AdminOrdersPage() {
   const toast = useToast();
 
   useEffect(() => {
-    const role = localStorage.getItem("cyberRole");
+    const role = fetch("/api/orders")("cyberRole");
     const isAuth = localStorage.getItem("cyberAuth");
 
     if (isAuth !== "true") {
